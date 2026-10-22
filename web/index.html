@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-mode="dusk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactiveWidget=resizes-content">
+<meta name="theme-color" content="#0b1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Tahoe · 液态玻璃音乐台</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/favicon.svg">
+<!-- 壁纸现在完全由「登录后的歌单」生成（模糊封面 / 封面主色渐变，见 app.js），
+     没有任何本地图片要预加载，所以这里不再需要首屏预载脚本。
+     配色固定走 dusk（深色）—— 壁纸是任意封面照片，明暗不可控，
+     只有深色底 + 浅色字才能保证任何一张封面下都读得清。 -->
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="list-closed">
+
+<!-- 液态玻璃的边缘折射：feTurbulence 噪声驱动 feDisplacementMap，
+     只作用于每块玻璃的边环（见 style.css 的 .glass::before），
+     中间保持通透 —— 和真玻璃一样，弯折发生在厚度处。 -->
+<svg class="svgdefs" aria-hidden="true" focusable="false">
+  <filter id="lg-distort" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.011 0.015" numOctaves="2" seed="92" result="noise"/>
+    <feGaussianBlur in="noise" stdDeviation="1.6" result="soft"/>
+    <feDisplacementMap in="SourceGraphic" in2="soft" scale="54" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<div class="bg" aria-hidden="true">
+  <!-- 两张通用背景层，交叉淡入淡出。
+       壁纸不再是一组固定图片 —— 由登录后的歌单生成（模糊封面 / 封面主色渐变），
+       见 app.js 的 wallForPlaylist / paintWall。JS 把新背景写进「下层」那张，
+       再淡入盖住「上层」那张；没有歌单时退回一张纯 CSS 深色底纹。 -->
+  <div class="bg__layer" id="bgLayerA"></div>
+  <div class="bg__layer" id="bgLayerB"></div>
+  <div class="bg__grade"></div>
+</div>
+
+<div class="app">
+
+  <header class="topbar">
+    <!-- 最顶部拖拽条：窗口上边缘到顶栏之间也能拖动（仅桌面 App 显示） -->
+    <div class="topstrip pywebview-drag-region" aria-hidden="true"></div>
+    <!-- 左列：品牌行 + 搜索行（搜索在日期下方，登录后显示） -->
+    <div class="topbar__left">
+      <div class="brand pywebview-drag-region">
+        <strong class="brand__name">Tahoe</strong>
+        <span class="brand__badge">液态玻璃</span>
+        <div class="glass pill clock" aria-label="当前时间">
+          <span class="clock__time" id="clockTime">--:--</span>
+          <span class="clock__date" id="clockDate"></span>
+        </div>
+      </div>
+      <div class="panel__search topsearch" id="libSearchWrap" hidden>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        <input id="libSearch" type="text" placeholder="搜索歌单 / 歌名 / 歌手" autocomplete="off" spellcheck="false" aria-label="搜索歌单和歌曲">
+        <button class="topsearch__clear" id="searchClear" type="button" aria-label="清空搜索" title="清空 (Esc)">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.2 3.2l5.6 5.6M8.8 3.2L3.2 8.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <!-- 网易云全库搜索的下拉结果：点一行即播（走同一条播放管线） -->
+        <div class="searchpop" id="searchPop" hidden></div>
+      </div>
+    </div>
+
+    <!-- 两侧留白 = 无边框窗口的拖拽区（桌面 App 里按住可移动窗口，双击最大化） -->
+    <div class="topbar__gap pywebview-drag-region" aria-hidden="true"></div>
+
+    <!-- 中部导航胶囊（仿 Folia 分段导航）：三个视图 + 快捷键帮助 -->
+    <nav class="glass pill navpill" aria-label="视图切换">
+      <button class="navpill__tab is-active" id="navAmbience" type="button">音景</button>
+      <button class="navpill__tab" id="navLibrary" type="button">歌单</button>
+      <button class="navpill__tab" id="navStage" type="button">视界</button>
+      <span class="navpill__sep" aria-hidden="true"></span>
+      <button class="navpill__help" id="navHelp" type="button" aria-label="快捷键说明" title="快捷键说明">?</button>
+    </nav>
+
+    <div class="topbar__gap pywebview-drag-region" aria-hidden="true"></div>
+
+    <div class="topbar__tools">
+      <button class="glass iconbtn tool" id="soundBtn" type="button" aria-pressed="true" aria-label="按键音效" title="按键音效">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.6h3.2L12 5.4c.6-.5 1.5-.1 1.5.7v11.8c0 .8-.9 1.2-1.5.7l-4.8-4.2H4c-.6 0-1-.4-1-1v-2.8c0-.6.4-1 1-1Z" fill="currentColor"/><path d="M16.2 9.2a4 4 0 0 1 0 5.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <button class="btn btn--login" id="loginBtn" type="button" aria-expanded="false" aria-haspopup="dialog" title="登录网易云音乐">
+        <svg class="icon icon--user" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.4" r="3.7" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M4.6 19.6c1.3-3.5 4-5.3 7.4-5.3s6.1 1.8 7.4 5.3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        <span id="loginBtnLabel">登录</span>
+      </button>
+      <button class="btn btn--wall" id="wallBtn" type="button" title="壁纸样式 (W)">
+        <!-- 壁纸样式二选一：模糊封面 / 封面主色渐变。图标与文字由 app.js 的
+             updateWallUI() 按 data-kind 切换（见 style.css）。 -->
+        <svg class="icon icon--cover" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3.4" width="18" height="17.2" rx="4" fill="none" stroke="currentColor" stroke-width="1.9"/><circle cx="8.7" cy="9" r="1.9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4.6 17.8l4.4-4 3.3 2.9 2.9-2.4 4.2 3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <svg class="icon icon--tint" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.1c3.7 4.4 6.1 7.5 6.1 10.5a6.1 6.1 0 1 1-12.2 0c0-3 2.4-6.1 6.1-10.5Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M9.3 13.7a2.9 2.9 0 0 0 2.7 3.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span id="wallBtnLabel">封面</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 无边框窗口的边缘缩放热区（仅桌面 App 显示，最大化时自动隐藏） -->
+  <div class="rz rz--l" data-rz="l" aria-hidden="true"></div>
+  <div class="rz rz--r" data-rz="r" aria-hidden="true"></div>
+  <div class="rz rz--b" data-rz="b" aria-hidden="true"></div>
+  <div class="rz rz--bl" data-rz="bl" aria-hidden="true"></div>
+  <div class="rz rz--br" data-rz="br" aria-hidden="true"></div>
+
+  <!-- 快捷键帮助气泡（原顶栏常驻提示胶囊，改成 ? 按需呼出） -->
+  <div class="glass pill helppop" id="helpPop" hidden>
+    <span class="hints__line"><span class="k">空格</span> 播放 / 暂停 · <span class="k">↑↓</span> 选歌 · <span class="k">Home/End</span> 首尾</span>
+    <span class="hints__line"><span class="k">←→</span> 快退 / 快进 · <span class="k">W</span> 壁纸 · <span class="k">M</span> 换曲</span>
+    <span class="hints__line"><span class="k">Esc</span> 返回上一层</span>
+  </div>
+
+  <main class="stage" id="stage">
+
+    <!-- 主视觉横幅：随机歌词在左，播放控制在右，让出中部给歌单长廊 -->
+    <section class="glass glass--liquid hero">
+      <!-- 横幅上的文案 = 一句随机歌词，每次进页面换一句（见 app.js 的 setHeroLyric）：
+           小字是这句词的出处（歌手 · 歌名），大字是歌词本身。
+           下面两行只是 JS 跑起来之前的占位 —— app.js 在解析期就把它换掉了。 -->
+      <div class="hero__brand">
+        <p class="hero__eyebrow" id="heroEyebrow">歌词 · 随机一句</p>
+        <h1 class="hero__title" id="heroTitle">把湖面，装进一块玻璃里。</h1>
+      </div>
+      <div class="hero__actions">
+        <button class="btn btn--primary" id="heroPlayBtn" type="button">
+          <svg class="icon icon--play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 5.6c0-1 1.1-1.6 2-1.1l9 5.9c.8.5.8 1.7 0 2.2l-9 5.9c-.9.5-2-.1-2-1.1V5.6Z" fill="currentColor"/></svg>
+          <svg class="icon icon--pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.4" y="5" width="3.6" height="14" rx="1.4" fill="currentColor"/><rect x="14" y="5" width="3.6" height="14" rx="1.4" fill="currentColor"/></svg>
+          <span id="heroPlayLabel">开始播放</span>
+        </button>
+        <button class="btn btn--ghost" id="heroNextBtn" type="button">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6v12" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/><path d="M6.2 6.6c0-.9 1-1.4 1.7-.9l6.2 4.4c.6.4.6 1.4 0 1.8l-6.2 4.4c-.7.5-1.7 0-1.7-.9V6.6Z" fill="currentColor"/></svg>
+          <span>换一首</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ══════════ 歌单长廊：页面中部的网易云歌单墙 ══════════
+         没有标题，也没有包住歌单的玻璃面板 —— 卡片直接浮在壁纸上，
+         每张卡是**一个独立的框**（封面 + 名字 + 作者），横向居中轮播：
+           · 滚轮往下滑 / 鼠标按住拖动，卡片都会左右移动（1:1 跟手，松手吸附）；
+           · 最靠中间的那张最大最实，两侧按距离逐级缩小、变淡（渐变退场）；
+           · 整排卡片横向铺满视口中部，两端由 mask 柔化淡出，没有硬边。
+         点卡片进全屏歌单详情页。 -->
+    <div class="galleryWrap" id="galleryWrap">
+      <section class="gallery" id="gallery" aria-label="网易云音乐歌单">
+        <button class="lanlink gallery__lan" id="lanBtn" type="button" hidden>局域网</button>
+
+        <div class="gallery__viewport" id="galViewport">
+          <div class="gallery__track" id="galTrack">
+            <div class="gallery__view gallery__view--pls" id="plWall" aria-label="歌单列表"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+</div>
+
+<!-- 桌面 App 的窗口控制：钉在窗口右上角（无边框），浏览器/手机里不显示。
+     必须放在 body 直属层级（不能进 .app）：.app 是 z-index:1 的层叠上下文，
+     放进去会被歌单详情页 / 粒子视界（body 级 z-index:55 的全屏浮层）整个盖住。 -->
+<div class="winbar" role="toolbar" aria-label="窗口控制">
+  <button class="winbar__btn" id="winMin" type="button" title="最小化">
+    <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6h7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+  </button>
+  <button class="winbar__btn" id="winMax" type="button" title="最大化 / 还原">
+    <svg viewBox="0 0 12 12" aria-hidden="true"><rect x="2.7" y="2.7" width="6.6" height="6.6" rx="1.1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+  </button>
+  <button class="winbar__btn winbar__btn--close" id="winClose" type="button" title="关闭">
+    <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3.2 3.2l5.6 5.6M8.8 3.2L3.2 8.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+  </button>
+</div>
+
+<!-- ══════════ 控制台：播放条 ══════════ -->
+<div class="console" id="console">
+
+  <div class="glass glass--liquid console__bar" role="region" aria-label="播放器">
+
+    <!-- 播放条的封面：点它进 / 出粒子视界。
+         这是第二条入口（第一条是歌单详情页的"点歌即进"，见 app.js 的 enterParticleFor）——
+         正在听的时候不必退回歌单页，直接点封面就能对着当前这首进视界。
+         用 <button> 而不是 div：天然可聚焦、回车/空格可用，也自动接上全局的
+         按键音（pointerdown 里按 button 判定）与点完失焦那套处理。 -->
+    <button class="bar__art" id="art" type="button" aria-label="进入粒子视界" title="进入粒子视界">
+      <div class="bar__disc">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M9 18.5V6.8c0-.5.3-.9.8-1L18 4v2.3l-7 1.5v10.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.6" cy="18.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="15.6" cy="16.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+      </div>
+      <!-- 悬停 / 聚焦才浮现的提示层：一个粒子图标，说明"这里可以点进视界" -->
+      <span class="bar__artcue" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="7" cy="7.2" r="1.6" fill="currentColor"/><circle cx="12" cy="4.9" r="1.1" fill="currentColor"/><circle cx="17.2" cy="8" r="1.9" fill="currentColor"/><circle cx="5.6" cy="13.1" r="1.2" fill="currentColor"/><circle cx="11.5" cy="12" r="2.3" fill="currentColor"/><circle cx="17.6" cy="13.8" r="1.4" fill="currentColor"/><circle cx="8" cy="18.6" r="1.6" fill="currentColor"/><circle cx="13.6" cy="17.9" r="1.1" fill="currentColor"/><circle cx="18.1" cy="19" r="1.7" fill="currentColor"/></svg>
+      </span>
+    </button>
+
+    <div class="bar__meta">
+      <div class="bar__track" id="trackName">未播放</div>
+      <div class="bar__artist" id="trackArtist">先在右上角登录网易云音乐</div>
+    </div>
+
+    <div class="bar__controls">
+      <button class="iconbtn" id="prevBtn" type="button" aria-label="上一首">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6v12" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/><path d="M17.8 6.6c0-.9-1-1.4-1.7-.9l-6.2 4.4c-.6.4-.6 1.4 0 1.8l6.2 4.4c.7.5 1.7 0 1.7-.9V6.6Z" fill="currentColor"/></svg>
+      </button>
+      <button class="iconbtn iconbtn--main" id="playBtn" type="button" aria-label="播放或暂停">
+        <svg class="icon icon--play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.2 5.6c0-1 1.1-1.6 2-1.1l9 5.9c.8.5.8 1.7 0 2.2l-9 5.9c-.9.5-2-.1-2-1.1V5.6Z" fill="currentColor"/></svg>
+        <svg class="icon icon--pause" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.4" y="5" width="3.6" height="14" rx="1.4" fill="currentColor"/><rect x="14" y="5" width="3.6" height="14" rx="1.4" fill="currentColor"/></svg>
+      </button>
+      <button class="iconbtn" id="nextBtn" type="button" aria-label="下一首">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6v12" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/><path d="M6.2 6.6c0-.9 1-1.4 1.7-.9l6.2 4.4c.6.4.6 1.4 0 1.8l-6.2 4.4c-.7.5-1.7 0-1.7-.9V6.6Z" fill="currentColor"/></svg>
+      </button>
+    </div>
+
+    <div class="bar__side">
+      <button class="iconbtn" id="listBtn" type="button" aria-expanded="false" aria-label="音乐列表" title="音乐列表">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7h9M4.5 12h9M4.5 17h5.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><path d="M16.6 9.1c0-.9.97-1.46 1.73-1l4.35 2.68c.72.44.72 1.5 0 1.94l-4.35 2.68c-.76.47-1.73-.1-1.73-1V9.1Z" fill="currentColor"/></svg>
+      </button>
+      <div class="viz" id="viz" aria-hidden="true"></div>
+      <div class="volume">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.6h3.2L12 5.4c.6-.5 1.5-.1 1.5.7v11.8c0 .8-.9 1.2-1.5.7l-4.8-4.2H4c-.6 0-1-.4-1-1v-2.8c0-.6.4-1 1-1Z" fill="currentColor"/><path d="M16.2 9.2a4 4 0 0 1 0 5.6M18.6 6.8a7.4 7.4 0 0 1 0 10.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <input type="range" id="vol" min="0" max="100" value="70" aria-label="音量">
+      </div>
+    </div>
+
+    <div class="bar__progress">
+      <span class="bar__time" id="tCur">0:00</span>
+      <div class="seek" id="seek" role="slider" aria-label="播放进度" aria-valuemin="0" aria-valuemax="32" aria-valuenow="0" tabindex="0">
+        <div class="seek__track"><div class="seek__fill" id="seekFill"></div><div class="seek__thumb" id="seekThumb"></div></div>
+      </div>
+      <span class="bar__time" id="tTotal">0:32</span>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════ 登录浮层：右上角按钮呼出（扫码 / Cookie 两种方式） ══════════ -->
+<div class="loginPop glass glass--liquid" id="loginPop" role="dialog" aria-label="登录网易云音乐" aria-hidden="true">
+  <div class="loginPop__body" id="loginBody"></div>
+</div>
+
+<!-- ══════════ 歌单详情页：点开歌单后进入的独立页面 ══════════
+     背景 = 该歌单封面的程序化派生（放大 + 72px 高斯模糊 + 压暗渐变），
+     每首歌一张独立卡片：封面 + 常驻播放按钮，错落海报墙（参考 folia-major）。 -->
+<div class="songStage" id="songPage" role="region" aria-label="歌单详情" aria-hidden="true">
+  <div class="songStage__bg" aria-hidden="true">
+    <img class="songStage__bgimg" id="songBgImg" alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+    <div class="songStage__grade"></div>
+  </div>
+
+  <header class="songStage__head">
+    <button class="songStage__back" id="songBack" type="button" aria-label="返回歌单墙" title="返回歌单墙 (Esc)">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="songStage__id">
+      <div class="songStage__titlerow">
+        <strong id="songTitle">歌单</strong>
+        <span class="songStage__tag">歌单</span>
+      </div>
+      <span class="songStage__sub" id="songSub">网易云音乐</span>
+    </div>
+    <div class="songStage__tools">
+      <button class="lanlink" id="rescanBtn" type="button" hidden>重新扫描</button>
+    </div>
+  </header>
+
+  <div class="songStage__wall" id="songWall" aria-label="歌曲卡片墙"></div>
+  <p class="panel__note songStage__empty" id="libEmpty" hidden>没有匹配的歌曲</p>
+</div>
+
+<div class="toast-region" id="toasts" aria-live="polite"></div>
+
+<!-- ══════════ 粒子视界：封面 → 高斯粒子（SHARP 式单图重建）+ 旋律歌词 ══════════
+     全屏沉浸式（对齐 Mineradio 的「电影镜头 · 粒子舞台」）：
+     封面被解析成一片高斯粒子尘埃铺满整屏，歌词不再另开一栏，而是
+     直接叠在粒子之上居中放大、主色发光、随旋律逐字起伏 —— 粒子即画面，
+     歌词即字幕。封面转粒子由 particles.js 用 WebGL 实时完成。
+     进入方式：在歌单详情页点某首歌播放（无独立入口按钮）。 -->
+<div class="pStage" id="pStage" role="dialog" aria-modal="true" aria-label="粒子视界" aria-hidden="true">
+  <div class="pStage__veil" aria-hidden="true"></div>
+
+  <!-- 全屏粒子层：坐标原点就在这层里，歌词与它共用同一个中心 -->
+  <div class="pView" id="pView">
+    <canvas></canvas>
+    <p class="pView__tip">拖动旋转 · 滚轮缩放 · 双击复位 · 鼠标靠近会推开粒子</p>
+  </div>
+
+  <!-- 歌词层：绝对定位居中盖在粒子上。当前行永远停在正中央 -->
+  <div class="pLyr" id="pLyr">
+    <div class="pLyr__viewport" id="pLyrBody">
+      <p class="pLyr__hint" id="pLyrHint">播放网易云歌曲后，歌词会随旋律在这里逐字起伏。</p>
+    </div>
+    <div class="pLyr__fade" aria-hidden="true"></div>
+  </div>
+
+  <header class="pStage__top">
+    <div class="glass pill pStage__brand">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="7.2" r="1.5" fill="currentColor"/><circle cx="12" cy="4.9" r="1" fill="currentColor"/><circle cx="17.2" cy="8" r="1.8" fill="currentColor"/><circle cx="5.6" cy="13.1" r="1.1" fill="currentColor"/><circle cx="11.5" cy="12" r="2.2" fill="currentColor"/><circle cx="17.6" cy="13.8" r="1.3" fill="currentColor"/><circle cx="8" cy="18.6" r="1.5" fill="currentColor"/><circle cx="13.6" cy="17.9" r="1" fill="currentColor"/><circle cx="18.1" cy="19" r="1.6" fill="currentColor"/></svg>
+      <span>粒子视界</span>
+    </div>
+    <div class="pStage__right">
+      <!-- 缩放指示：只在滚动时浮现，--zoom 由 particles.js 每帧写入，条宽随倍率伸缩 -->
+      <div class="glass pill pStage__zoom" id="pZoomHud" aria-hidden="true">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M14.8 14.8l4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 10.5h5M10.5 8v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span class="pStage__zoomBar"><i></i></span>
+        <b id="pZoomVal">100%</b>
+      </div>
+      <div class="glass pill pStage__badge"><span id="pBadge">准备中…</span></div>
+      <button class="glass iconbtn pStage__close" id="pClose" type="button" aria-label="退出粒子视界" title="退出 (Esc)">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- 底部左角的曲名 / 歌手：不抢画面，贴在词与播放条之间 -->
+  <footer class="pStage__foot">
+    <div class="pStage__now">
+      <strong id="pTitle">—</strong>
+      <span id="pSub">—</span>
+    </div>
+  </footer>
+</div>
+
+<script src="particles.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

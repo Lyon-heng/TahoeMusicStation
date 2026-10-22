@@ -1,0 +1,41 @@
+# ===== 发布物（不进 Git，走 GitHub Release）=====
+*.exe
+*.zip
+*.7z
+*.rar
+dist/
+build/
+_exe_build/
+*.spec
+
+# ===== 运行时数据 / 用户缓存 =====
+ShellData/
+android-sdk/
+EBWebView/
+.mimosa/
+.temp/
+__pycache__/
+*.pyc
+!bytecode/*.pyc        # 字节码存档除外，显式保留
+*.pyo
+*.pyd
+
+# ===== 自签名证书（运行时自动生成，不入库）=====
+cert.pem
+cert.key
+
+# ===== 前端构建产物（本项目前端无构建步骤，预留）=====
+node_modules/
+dist-web/
+.parcel-cache/
+
+# ===== IDE / 系统 =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 提取/临时工作目录 =====
+_extract_work/
+TahoeCore.exe_extracted/

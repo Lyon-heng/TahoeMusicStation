@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Tahoe 液态玻璃音乐台">
+  <defs>
+    <linearGradient id="dusk" x1="0" y1="0" x2="0.25" y2="1">
+      <stop offset="0" stop-color="#222952"/>
+      <stop offset="0.45" stop-color="#344a80"/>
+      <stop offset="0.72" stop-color="#6e608c"/>
+      <stop offset="0.92" stop-color="#d67a42"/>
+      <stop offset="1" stop-color="#f0a55c"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.44" r="0.55">
+      <stop offset="0" stop-color="#ffb06e" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#ffb06e" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="32" height="32" rx="9" fill="url(#dusk)"/>
+  <rect width="32" height="32" rx="9" fill="url(#sun)"/>
+  <!-- 玻璃斜光 -->
+  <polygon points="0,0 19.8,0 5.8,32 0,32" fill="#fff" opacity="0.10"/>
+  <polygon points="22.4,0 26.9,0 12.8,32 8.3,32" fill="#fff" opacity="0.05"/>
+  <!-- 连尾双八分音符（玻璃白） -->
+  <g fill="#fff" opacity="0.95" transform="rotate(-8 16 16)">
+    <ellipse cx="12.35" cy="24.1" rx="2.97" ry="2.19"/>
+    <ellipse cx="20.47" cy="22.2" rx="2.97" ry="2.19"/>
+    <rect x="14" y="10.3" width="1.44" height="14.4"/>
+    <rect x="22.1" y="8.4" width="1.44" height="14.4"/>
+    <polygon points="14,9.4 23.56,7.5 23.56,10.3 14,12.2"/>
+  </g>
+  <!-- 湖面波纹 -->
+  <path d="M2.8 27.5c1.45-1.15 2.7-1.15 4.15 0s2.7 1.15 4.15 0 2.4-1.05 3.3-.35"
+        fill="none" stroke="#fff" stroke-width="0.85" stroke-linecap="round" opacity="0.6"/>
+  <path d="M2.8 29.7c1.45-1.15 2.7-1.15 4.15 0s2.7 1.15 4.15 0 2.4-1.05 3.3-.35"
+        fill="none" stroke="#fff" stroke-width="0.85" stroke-linecap="round" opacity="0.35"/>
+  <!-- 内缘高光 -->
+  <rect x="0.3" y="0.3" width="31.4" height="31.4" rx="8.7" fill="none" stroke="#fff" stroke-width="0.22" opacity="0.35"/>
+</svg>
